@@ -1,0 +1,131 @@
+---
+title: "p8105_hw6_sl5009"
+author: "Shengzhi Luo"
+date: "03/12/2021"
+output: github_document
+---
+
+```{r,setup,include=FALSE}
+library(tidyverse)
+library(viridis)
+library(p8105.datasets)
+library(modelr)
+
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  fig.width = 8,
+  fig.height = 6,
+  out.width = "90%"
+)
+
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+```
+
+# Problem 1
+
+## Load and clean the data
+
+```{r}
+birthweight_df=
+  read_csv("./birthweight.csv") %>% 
+  mutate(
+    babysex=case_when(
+      babysex=="1" ~ "male",
+      babysex=="2" ~ "female"
+    ),
+    frace=case_when(
+      frace=="1" ~ "White",
+      frace=="2" ~ "Black",
+      frace=="3" ~ "Asian",
+      frace=="4" ~ "Puerto Rican",
+      frace=="8" ~ "Other",
+      frace=="9" ~ "Unknown"
+    ),
+    malform=case_when(
+      malform=="0" ~"absent",
+      malform=="1" ~ "present"
+    ),
+    mrace=case_when(
+      mrace=="1" ~ "White",
+      mrace=="2" ~ "Black",
+      mrace=="3" ~ "Asian",
+      mrace=="4" ~ "Puerto Rican",
+      mrace=="8" ~ "Other"
+    ),
+    babysex=fct_infreq(babysex)
+  ) %>% 
+  replace(is.na(.), 0) %>% 
+  select(-pnumlbw,-pnumsga)
+
+```
+
+We make babysex, frace, malform and mrace as factors and drop pnumlbw and pnumsga column since they are all 0.
+
+## Propose a regression model for birthweight.
+
+```{r}
+fit_0 = lm(bwt ~ ., data = birthweight_df)
+summary(fit_0)
+fit_1 = lm(bwt ~ delwt + menarche + mheight + momage + mrace + smoken + wtgain + parity, data = birthweight_df)
+summary(fit_1)
+fit_2 = lm(bwt ~ delwt + menarche + mheight + momage + mrace + smoken + wtgain, data = birthweight_df)
+summary(fit_2)
+```
+
+We compare the full model with the plain model and then we drop the factor "parity".
+
+## Make a plot
+
+```{r}
+birthweight_df %>% 
+  modelr::add_residuals(fit_2) %>% 
+  modelr::add_predictions(fit_2) %>% 
+  ggplot(aes(x = pred, y = resid)) +geom_point()+ geom_smooth()
+  labs(x = "fitted values", y = "residuals")
+```
+
+
+## Compare my model to two onthers.
+
+```{r}
+cv_df = 
+  crossv_mc(birthweight_df, 100) %>% 
+  mutate(train = map(train, as_tibble),
+         test = map(test, as_tibble)) %>% 
+  mutate(
+    my_model = map(train, ~lm(bwt ~ delwt + menarche + mheight + momage + mrace + smoken + wtgain, data = .x)),
+    comp_1 = map(train,~lm(bwt ~ blength + gaweeks,data = .x)),
+    comp_2 = map(train,~lm(bwt ~ bhead + blength + babysex 
+                              + bhead*blength + bhead*babysex + blength*babysex 
+                              + bhead*blength*babysex, data = .x))
+  ) %>% 
+  mutate(
+    rmse_my_model = map2_dbl(my_model, test ,~rmse(model = .x,data = .y)),
+    rmse_comp_1 = map2_dbl(comp_1, test ,~rmse(model = .x,data = .y)),
+    rmse_comp_2 = map2_dbl(comp_2, test ,~rmse(model = .x,data = .y))
+  )
+```
+
+```{r}
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model", 
+    values_to = "rmse",
+    names_prefix = "rmse_") %>% 
+  mutate(model = fct_inorder(model)) %>% 
+  ggplot(aes(x = model, y = rmse)) + geom_violin()
+```
+
+
+# Problem 2
