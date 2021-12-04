@@ -75,9 +75,9 @@ We make babysex, frace, malform and mrace as factors and drop pnumlbw and pnumsg
 ```{r}
 fit_0 = lm(bwt ~ ., data = birthweight_df)
 summary(fit_0)
-fit_1 = lm(bwt ~ delwt + menarche + mheight + momage + mrace + smoken + wtgain + parity, data = birthweight_df)
+fit_1 = lm(bwt ~ delwt + menarche + fincome + mheight + momage + mrace + smoken + wtgain + parity, data = birthweight_df)
 summary(fit_1)
-fit_2 = lm(bwt ~ delwt + menarche + mheight + momage + mrace + smoken + wtgain, data = birthweight_df)
+fit_2 = lm(bwt ~ delwt + menarche + fincome + mheight + momage + mrace + smoken + wtgain, data = birthweight_df)
 summary(fit_2)
 ```
 
@@ -129,3 +129,79 @@ cv_df %>%
 
 
 # Problem 2
+
+## Download data
+
+```{r}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
+
+## Produce estimates
+
+
+```{r}
+bootstrap = 
+  weather_df %>% 
+  modelr::bootstrap(n = 5000) %>% 
+  mutate(
+    models = map(strap, ~lm(tmax ~ tmin, data = .x)),
+    r_square = map(models, broom::glance),
+    log_estimate = map(models, broom::tidy)
+  ) %>% 
+  select(-strap, -models) %>% 
+  unnest(r_square) %>% 
+  select(.id, r.squared, log_estimate) %>% 
+  unnest(log_estimate) %>% 
+  select(-std.error, -statistic, -p.value) %>% 
+  mutate(term = recode(term, `(Intercept)` = "b0", tmin = "b1")) %>% 
+  pivot_wider(
+    names_from = term,
+    values_from = estimate
+  ) %>% 
+  mutate(log_value = log(b0*b1))  
+```
+
+## Plot the distribution
+```{r}
+bootstrap %>% 
+  ggplot(aes(r.squared)) + 
+  geom_density()
+```
+
+As we can see , the r.squared estimate are normally distibuted.
+
+
+
+```{r}
+bootstrap %>% 
+  ggplot(aes(log_value)) + 
+  geom_density()
+```
+The log_value are also normally distributed.
+
+## Provide a 95% confidence interval
+
+```{r}
+bootstrap %>% 
+  summarize(
+    ci_lower = quantile(r.squared, 0.025), 
+    ci_upper = quantile(r.squared, 0.975)) %>%
+    knitr::kable(digits = 2)
+bootstrap %>% 
+  summarize(
+    ci_lower = quantile(log_value, 0.025), 
+    ci_upper = quantile(log_value, 0.975)) %>%
+  knitr::kable(digits = 2)
+```
+
+
